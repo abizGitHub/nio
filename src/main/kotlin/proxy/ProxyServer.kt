@@ -36,7 +36,7 @@ class ProxyServer(private val listeningPort: Int, private val backendPort: Int) 
                 val key = iterator.next()
                 if (!key.isValid) {
                     println("key-invalllid")
-                    return
+                    continue
                 }
                 val channel = key.channel()
                 when {
@@ -94,16 +94,22 @@ class ProxyServer(private val listeningPort: Int, private val backendPort: Int) 
 
     private fun handleWrite(key: SelectionKey) {
         val buffer = (key.attachment() as Session).buffer
-        (key.channel() as SocketChannel).write(buffer)
+        kotlin.runCatching {
+            (key.channel() as SocketChannel).write(buffer)
+        }
         buffer.flip()
     }
 
     private fun handleRead(key: SelectionKey): Int {
         val buffer = (key.attachment() as Session).buffer
         buffer.clear()
-        val r = (key.channel() as SocketChannel).read(buffer)
+        val r = kotlin.runCatching {
+            (key.channel() as SocketChannel).read(buffer)
+        }.onFailure {
+            it.printStackTrace()
+        }
         buffer.flip()
-        return r
+        return r.getOrElse { -1 }
     }
 
 }
