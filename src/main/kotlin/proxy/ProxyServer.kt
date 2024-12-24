@@ -1,17 +1,20 @@
 package proxy
 
+import java.io.FileInputStream
 import java.net.InetSocketAddress
 import java.nio.ByteBuffer
 import java.nio.channels.SelectionKey
 import java.nio.channels.Selector
 import java.nio.channels.ServerSocketChannel
 import java.nio.channels.SocketChannel
+import java.util.*
 
-fun main(args: Array<String>) {
-    val listeningPort = args[0].toInt()
-    val backendPort = args[1].toInt()
-    println("Starting proxy port:$listeningPort to $backendPort")
-    ProxyServer(listeningPort, backendPort).start()
+fun main() {
+    val properties = Properties().apply { load(FileInputStream("config.properties")) }
+    val listeningPort = properties.getProperty("server_port").trim().toInt()
+    val proxyPort = properties.getProperty("proxy_port").trim().toInt()
+    println("Starting proxy port:$listeningPort to $proxyPort")
+    ProxyServer(listeningPort, proxyPort).start()
 }
 
 class ProxyServer(private val listeningPort: Int, private val backendPort: Int) {

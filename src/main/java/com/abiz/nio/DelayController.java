@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/delay")
 public class DelayController {
 
+    long startMillis = System.currentTimeMillis();
+
     @GetMapping("/{millis}")
     public String replyWithDelay(@PathVariable Long millis) {
         try {
@@ -16,7 +18,13 @@ public class DelayController {
         } catch (InterruptedException e) {
             throw new RuntimeException(e);
         }
-        return Thread.currentThread().getName() + "\n";
+        var response = String.format(
+                "%-14s %-6s %-10d",
+                Thread.currentThread().getName(),
+                millis,
+                (System.currentTimeMillis() - startMillis));
+        System.out.println(response);
+        return response + "\n";
     }
 
 }

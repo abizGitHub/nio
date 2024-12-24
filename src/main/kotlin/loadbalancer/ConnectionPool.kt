@@ -1,5 +1,6 @@
-package demo.tps
+package loadbalancer
 
+import loadbalancer.ConnectionSelectionStrategy.*
 import java.util.*
 import kotlin.concurrent.thread
 
@@ -7,7 +8,7 @@ interface Connection {
     fun open(): Boolean
     fun close()
     fun isOpen(): Boolean
-    fun getResponseTime(): Int
+    fun getResponseTime(): Long
 }
 
 class MyConnection(private val id: String) : Connection {
@@ -30,32 +31,36 @@ class MyConnection(private val id: String) : Connection {
 
     override fun isOpen(): Boolean = open
 
-    override fun getResponseTime(): Int = hashCode()
+    override fun getResponseTime(): Long = Random().nextLong()
 }
+
+enum class ConnectionSelectionStrategy { ROUND_ROBIN, LEAST_RESPONSE_TIME }
 
 class ConnectionPool<T : Connection>(
     private val connectionFactory: () -> T,
     private val maxConnections: Int = 10,
-    private val strategy: ConnectionSelectionStrategy = ConnectionSelectionStrategy.ROUND_ROBIN
+    private val strategy: ConnectionSelectionStrategy = ROUND_ROBIN
 ) {
     private val availableConnections: Queue<T> = LinkedList()
     private val usedConnections: MutableList<T> = mutableListOf()
 
     init {
+        fillPool()
+    }
+
+    private fun fillPool() {
         repeat(maxConnections) {
             availableConnections.add(connectionFactory())
         }
     }
 
-    enum class ConnectionSelectionStrategy { ROUND_ROBIN, LEAST_RESPONSE_TIME }
-
     @Synchronized
     fun getConnection(): T {
         val connection = when (strategy) {
-            ConnectionSelectionStrategy.ROUND_ROBIN -> getConnectionRoundRobin()
-            ConnectionSelectionStrategy.LEAST_RESPONSE_TIME -> getConnectionLeastResponseTime()
+            ROUND_ROBIN -> getConnectionRoundRobin()
+            LEAST_RESPONSE_TIME -> getConnectionLeastResponseTime()
         }
-        if (connection.open()) {
+        if (connection.isOpen()) {
             usedConnections.add(connection)
         }
         return connection
@@ -63,25 +68,27 @@ class ConnectionPool<T : Connection>(
 
     // Round Robin strategy: Return the next available connection in a circular manner
     private fun getConnectionRoundRobin(): T {
-        return if (availableConnections.isNotEmpty()) {
-            val connection = availableConnections.poll()
-            if (connection.open()) {
-                usedConnections.add(connection)
-                connection
-            } else {
-                throw IllegalStateException("Connection $connection failed to open.")
-            }
+        if (availableConnections.isEmpty()) {
+            fillPool()
+        }
+        val connection = availableConnections.poll()
+        return if (connection.open()) {
+            connection
         } else {
-            throw IllegalStateException("No available connections in the pool")
+            throw IllegalStateException("Connection $connection failed to open.")
         }
     }
 
     // Least Response Time strategy: Return the connection with the least response time
     private fun getConnectionLeastResponseTime(): T {
         if (availableConnections.isEmpty()) {
-            throw IllegalStateException("No available connections in the pool")
+            fillPool()
         }
-        return availableConnections.minByOrNull { it.getResponseTime() }!!
+        return availableConnections.minByOrNull { it.getResponseTime() }!!.let {
+            it.open()
+            availableConnections.remove(it)
+            it
+        }
     }
 
     // Return a connection back to the pool
@@ -103,7 +110,7 @@ fun main() {
     val connectionPool = ConnectionPool(
         connectionFactory = { MyConnection(UUID.randomUUID().toString()) },
         maxConnections = 5,
-        strategy = ConnectionPool.ConnectionSelectionStrategy.ROUND_ROBIN
+        strategy = ROUND_ROBIN
     )
     repeat(10) { threadIndex ->
         thread {
